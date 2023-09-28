@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback } from "react";
-import axios from "axios";
+import React, { useEffect, useCallback, useRef } from "react";
+import axios, { CancelToken, isCancel } from "axios";
 import extData from "../ext.json";
 
 import useUploadReduxHook from "../Redux/Hooks/useUploadReduxHook";
@@ -20,6 +20,7 @@ function randomString(strLength, charSet) {
 }
 
 let is_puase = false;
+let is_cancel = false;
 
 const Uploader = () => {
   const {
@@ -41,6 +42,7 @@ const Uploader = () => {
     set_queue_chunk,
     queue_Chunk,
   } = useUploadReduxHook();
+  const cancelFile = useRef(null);
 
   // useEffect(() => {
   //   is_puase = is_canceled;
@@ -112,15 +114,6 @@ const Uploader = () => {
     set_is_paused(false);
   };
 
-  const cancelHandler = () => {
-    console.log("Cancel");
-    set_is_canceled(true);
-    set_is_uploading(false);
-    set_is_paused(false);
-    set_selected_files([]);
-    set_upload_progress({});
-    // cancelUpload();
-  };
   const deleteHandler = async (Name) => {
     await axios.delete(`http://localhost:8020/delete/${Name}`);
     fetchFileList();
@@ -206,91 +199,110 @@ const Uploader = () => {
     }
   }, []);
 
-  const submitHandler = useCallback((e) => {
-    uploading().then((res) => console.log(res));
-  }, []);
-  // if (selected_files.length === 0) {
-  //   alert("Please select one or more files.");
-  //   return;
-  // }
-  // set_is_uploading(true);
-  // try {
-  //   for (const file of selected_files) {
-  //     let totalChunks = 0;
-  //     totalChunks = file.fileChunks.length;
-  //     const fileName = file.fileName;
-  //     const ext = fileName.split(".").pop();
-  //     const validExtensions = extData
-  //       .map((imageFormat) => imageFormat.extensions)
-  //       .flat();
+  // const submitHandler = useCallback((e) => {
+  //   uploading().then((res) => console.log(res));
+  // }, []);
+  const submitHandler = async () => {
+    if (selected_files.length === 0) {
+      alert("Please select one or more files.");
+      return;
+    }
+    set_is_uploading(true);
+    try {
+      for (const file of selected_files) {
+        let totalChunks = 0;
+        totalChunks = file.fileChunks.length;
+        const fileName = file.fileName;
+        const ext = fileName.split(".").pop();
+        const validExtensions = extData
+          .map((imageFormat) => imageFormat.extensions)
+          .flat();
 
-  //     if (validExtensions.includes(ext)) {
-  //       console.log("File Format is Valid");
-  //       let totalProgress = 0;
-  //       let combinedData = new Uint8Array();
-  //       // set_uploading_file(file);
-  //       for (let chunkNumber = 0; chunkNumber < totalChunks; chunkNumber++) {
-  //         const formData = new FormData();
-  //         formData.append("testImage", file.fileChunks[chunkNumber]);
-  //         formData.append("imageName", file.fileName);
-  //         formData.append("chunkSize", file.fileChunks.size);
-  //         formData.append("totalChunks", totalChunks);
-  //         formData.append("chunkNumber", chunkNumber);
-  //         formData.append("id", file.fileChunks[chunkNumber].id);
-  //         try {
-  //           const response = await axios.post(
-  //             "http://localhost:8020/upload",
-  //             formData,
-  //             {
-  //               headers: {
-  //                 "Content-Type": "multipart/form-data",
-  //               },
-  //               onUploadProgress: (progressEvent) => {
-  //                 const chunkProgress =
-  //                   (progressEvent.loaded / progressEvent.total) * 100;
-  //                 totalProgress += chunkProgress;
-  //                 const overallProgress = (
-  //                   totalProgress / totalChunks
-  //                 ).toFixed(2);
+        if (validExtensions.includes(ext)) {
+          console.log("File Format is Valid");
+          let totalProgress = 0;
+          let combinedData = new Uint8Array();
+          // set_uploading_file(file);
+          let data = {};
+          for (let chunkNumber = 0; chunkNumber < totalChunks; chunkNumber++) {
+            const formData = new FormData();
+            formData.append("testImage", file.fileChunks[chunkNumber]);
+            formData.append("imageName", file.fileName);
+            formData.append("chunkSize", file.fileChunks.size);
+            formData.append("totalChunks", totalChunks);
+            formData.append("chunkNumber", chunkNumber);
+            formData.append("id", file.fileChunks[chunkNumber].id);
+            if (is_cancel) {
+              console.log("data", data);
+              return;
+            }
+            try {
+              const response = await axios.post(
+                "http://localhost:8020/upload",
+                formData,
+                {
+                  headers: {
+                    "Content-Type": "multipart/form-data",
+                  },
+                  onUploadProgress: (progressEvent) => {
+                    const chunkProgress =
+                      (progressEvent.loaded / progressEvent.total) * 100;
+                    totalProgress += chunkProgress;
+                    const overallProgress = (
+                      totalProgress / totalChunks
+                    ).toFixed(2);
 
-  //                 const _upload_progress = upload_progress;
-  //                 set_upload_progress({
-  //                   ..._upload_progress,
-  //                   [fileName]: overallProgress,
-  //                 });
-  //               },
-  //             }
-  //           );
-  //           const responseData = new Uint8Array(response.data.chunkData);
-  //           combinedData = new Uint8Array([...combinedData, ...responseData]);
-  //           console.log(responseData);
-  //           if (chunkNumber === totalChunks - 1) {
-  //             console.log("Send File to Server");
-  //             set_is_uploading(false);
-  //             fetchFileList();
-  //             // set_upload_progress(0);
-  //             set_selected_files([]);
-  //             set_is_canceled(false);
-  //           }
-  //         } catch (error) {
-  //           console.error("Error uploading chunk:", error);
-  //           set_is_uploading(false);
-  //         }
-  //       }
-  //     } else {
-  //       console.log("File Format is not Valid");
-  //       set_is_uploading(false);
-  //       return;
-  //     }
-  //   }
-  // } catch (error) {
-  //   console.error("Error uploading files:", error);
-  //   set_is_uploading(false);
-  // }
+                    const _upload_progress = upload_progress;
+                    set_upload_progress({
+                      ..._upload_progress,
+                      [fileName]: overallProgress,
+                    });
+                  },
+                  cancelToken: new CancelToken(
+                    (cancel) => (cancelFile.current = cancel)
+                  ),
+                }
+              );
+              data = {
+                ...data,
+                response,
+              };
+              console.log("dataaaaa", data);
+              const responseData = new Uint8Array(response.data.chunkData);
+              combinedData = new Uint8Array([...combinedData, ...responseData]);
+              console.log(responseData);
+              if (chunkNumber === totalChunks - 1) {
+                console.log("Send File to Server");
+                set_is_uploading(false);
+                fetchFileList();
+                // set_upload_progress(0);
+                set_selected_files([]);
+                set_is_canceled(false);
+              }
+            } catch (error) {
+              console.error("Error uploading chunk:", error);
+              set_is_uploading(false);
+            }
+          }
+        } else {
+          console.log("File Format is not Valid");
+          set_is_uploading(false);
+          return;
+        }
+      }
+    } catch (error) {
+      if (isCancel(error)) alert(error.message);
+      console.error("Error uploading files:", error);
+      set_is_uploading(false);
+    }
+  };
 
   const cancelUpload = () => {
-    console.log("request canceled by user.");
-    set_is_canceled(true);
+    if (cancelFile.current) {
+      console.log("Canceling File is Successfuly");
+      cancelFile.current("user cancel upload file");
+      is_cancel = true;
+    }
   };
 
   useEffect(() => {
@@ -323,7 +335,7 @@ const Uploader = () => {
           {is_uploading && is_paused && (
             <button onClick={resumeHandler}>Resume</button>
           )}
-          {is_uploading && <button onClick={cancelHandler}>Cancel</button>}
+          {is_uploading && <button onClick={cancelUpload}>Cancel</button>}
         </div>
       </div>
       <div className="ListOfImage">
